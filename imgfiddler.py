@@ -175,8 +175,7 @@ class App(Frame):
         """Flips an image horizontally"""
         buffer = self.second_img.copy()
         if self.mod_window is not None:
-            height = self.second_img.shape[0]
-            width = self.second_img.shape[1]
+            height, width = self.second_img.shape[0], self.second_img.shape[1]
             for i in range(height):
                 for j in range(width):
                     # zero-based indexing
@@ -189,8 +188,7 @@ class App(Frame):
         """Flips an image horizontally"""
         buffer = self.second_img.copy()
         if self.mod_window is not None:
-            height = self.second_img.shape[0]
-            width = self.second_img.shape[1]
+            height, width = self.second_img.shape[0], self.second_img.shape[1]
             for i in range(width):
                 for j in range(height):
                     self.second_img[j, i] = buffer[height -
@@ -201,8 +199,7 @@ class App(Frame):
 
     def grayscale(self):
         if self.mod_window is not None:
-            height = self.second_img.shape[0]
-            width = self.second_img.shape[1]
+            height, width = self.second_img.shape[0], self.second_img.shape[1]
             #
             #   the code below is too slow; TODO: explore using cython to speed 'for' loops
             #
@@ -227,7 +224,7 @@ class App(Frame):
 
     def quantize(self):
         if self.mod_window is not None and self.is_gray_scale:
-            shades = self.ent1.get()
+            shades = self.quantize_entry.get()
             try:
                 shades = int(shades)
             except ValueError:
@@ -248,11 +245,13 @@ class App(Frame):
                         else:
                             bin_hash[value] = bin
 
-                height = self.second_img.shape[0]
-                width = self.second_img.shape[1]
+                buffer = self.second_img.copy()
+                height, width = self.second_img.shape[0], self.second_img.shape[1]
                 for i in range(height):
                     for j in range(width):
-                        self.second_img[i][j] = bin_hash[self.second_img[i][j][0]]
+                        buffer[i][j] = bin_hash[self.second_img[i][j][0]]
+
+                self.second_img = buffer.copy()
                 self.show_modified_image()
         else:
             if self.mod_window is None:
@@ -300,7 +299,22 @@ class App(Frame):
         return hist_table 
 
     def brightness_adj(self):
-        if self.mod_window
+        if self.mod_window is not None:
+            adjust_value = self.bright_entry.get()
+            try:
+                adjust_value = int(adjust_value)
+            except ValueError:
+                showerror(
+                    "Error", "Invalid input. Must type a number between -255 and 255.")
+
+            if adjust_value not in range (-255,256):
+                showerror(
+                    "Error", "Invalid input. Must type a number between -255 and 255.")
+            else:
+                height, width = self.second_img.shape[0], self.second_img.shape[1]
+                for i in range(height):
+                    for j in range(width):
+                        sel
 
     def show_modified_image(self):
         image = Image.fromarray(self.second_img)
