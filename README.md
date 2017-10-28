@@ -1,7 +1,7 @@
 # ImgFiddler
 A program for basic image manipulation, made as a class assignment.
 
-##Installation
+## Installation
 This program requires Python3 to work. Use pip and the requirements.txt file to install all required packages, like so:
 ```
 pip -r requirements
