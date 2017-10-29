@@ -25,6 +25,7 @@ class App(Frame):
         self.hist_window = None
         self.hist_window2 = None
         self.canvas = None
+        self.canvas2 = None
         self.label = None
         self.mod_label = None
         self.third_label = None
@@ -39,7 +40,7 @@ class App(Frame):
         self.grid(sticky= W + E + N + S)
 
         self.load_button = Button(
-            self, text="Load Image", command=self.load_image)
+            self, text="Load Image", command=self.load_mod_image)
         self.load_button.grid(row=1, padx=3, pady=4, sticky = W + E)
 
         self.save_button = Button(
@@ -59,7 +60,7 @@ class App(Frame):
         self.v_flip_button.grid(row=5, padx=3, pady=4, sticky = W + E)
 
         self.grayscale_button = Button(
-            self, text="Grayscale", state=DISABLED, command=self.grayscale)
+            self, text="Grayscale", state=DISABLED, command=self.grayscale_mod_image)
         self.grayscale_button.grid(row=6, padx=3, pady=4, sticky = W + E)
 
         quantize_vcmd = (self.register(self.validate_quantize), '%d',
@@ -70,13 +71,13 @@ class App(Frame):
         '%i', '%P', '%s', '%S', '%v', '%V', '%W')
 
         quantize_lab = Label(self, text="Number of shades for quantization")
-        quantize_lab.grid(row=7, sticky=W)
+        quantize_lab.grid(row=7)
         self.quantize_entry = Entry(self, state=DISABLED, validate="key", validatecommand=quantize_vcmd)
         self.quantize_entry.grid(row=8)
         self.quantize_button = Button(self, text="Quantize", state=DISABLED, command=self.quantize)
         self.quantize_button.grid(row=9, padx=3, pady=4, sticky= W + E)
 
-        self.hist_button = Button(self, state=DISABLED, text="Grayscale histogram", command=self.draw_histogram)
+        self.hist_button = Button(self, state=DISABLED, text="Grayscale histogram", command=self.draw_gray_histogram)
         self.hist_button.grid(row=10, padx=3, pady=4, sticky = W + E)
 
         bright_lab = Label(self, text="Brightness adjustment")
@@ -96,8 +97,15 @@ class App(Frame):
         self.negative_button = Button(self, text="Negative", state=DISABLED, command=self.negative)
         self.negative_button.grid(row=17, padx=3, pady=4, sticky = W + E)
 
-        self.negative_button = Button(self, text="Histogram equalization", state=DISABLED, command=self.histogram_equalization)
-        self.negative_button.grid(row=18, padx=3, pady=4, sticky = W + E)
+        self.hist_equalization_button = Button(self, text="Histogram equalization", state=DISABLED, command=self.histogram_equalization)
+        self.hist_equalization_button.grid(row=18, padx=3, pady=4, sticky = W + E)
+
+        self.load_hist_match_img_button = Button(
+                        self, text="Load image for histogram matching", state=DISABLED, command=self.load_hist_match
+                        )
+        self.load_hist_match_img_button.grid(row=19, padx=3, pady=4, sticky = W + E)
+        self.histogram_matching_button = Button(self, text="Match histograms", state=DISABLED, command=self.match_histograms)
+        self.histogram_matching_button.grid(row=20, padx=3, pady=4, sticky = W + E)
 
     def validate_quantize(self, action, index, value_if_allowed, prior_value,
                  text, validation_type, trigger_type, widget_name):
@@ -132,7 +140,7 @@ class App(Frame):
             self.bell()
             return False
 
-    def load_image(self):
+    def load_mod_image(self):
         """Loads image from dialog box, rearranges its color channels and displays it"""
         imgname = askopenfilename(filetypes=(("JPEG files", (".jpeg, .jpg")),
                                              ("PNG files", "*.png"),
@@ -142,22 +150,16 @@ class App(Frame):
         if imgname:
             try:
                 self.img = cv2.imread(imgname)
-            except IOError:                     # <- naked except is a bad idea
+            except IOError:
                 showerror("Open image file",
                           "Failed to read file '%s' \n" % imgname)
         # opencv2 uses BGR scheme, gotta translate it to RGB
         blue, green, red = cv2.split(self.img)
 
-        self.remove_window()
-        self.remove_second_window()
-        self.remove_third_window
-        self.remove_hist_window()
-        self.remove_hist_window2
-
         self.img = cv2.merge((red, green, blue))
 
         self.window = Toplevel(root)
-        self.window.title("Original Image")
+        self.window.title("Original image")
         self.window.protocol('WM_DELETE_WINDOW', self.remove_window)
 
         im = Image.fromarray(self.img)
@@ -167,6 +169,36 @@ class App(Frame):
         self.label.pack()
 
         self.copy_button.config(state=NORMAL)
+
+    def load_hist_match(self):
+        """Loads image for histogram matching"""
+        imgname = askopenfilename(filetypes=(("JPEG files", (".jpeg, .jpg")),
+                                             ("PNG files", "*.png"),
+                                             ("Bitmap files", "*.bmp"),
+                                             ("All files", "*.*")))
+
+        if imgname:
+            try:
+                self.third_img = cv2.imread(imgname)
+            except IOError:
+                showerror("Open image file",
+                          "Failed to read file '%s' \n" % imgname)
+        # opencv2 uses BGR scheme, gotta translate it to RGB
+        blue, green, red = cv2.split(self.third_img)
+
+        self.third_img = cv2.merge((red, green, blue))
+        self.third_window = Toplevel(root)
+        self.third_window.title("Matching target")
+        self.third_window.protocol('WM_DELETE_WINDOW', self.remove_third_window)
+
+        self.third_img = self.grayscale(self.third_img)
+        im = Image.fromarray(self.third_img)
+        imgtk = ImageTk.PhotoImage(image=im)
+        self.third_label = Label(self.third_window, image=imgtk)
+        self.third_label.image = imgtk
+        self.third_label.pack()
+
+        self.histogram_matching_button.config(state=NORMAL)        
 
     def save_image(self):
         """Saves image located in the copy area"""
@@ -195,7 +227,7 @@ class App(Frame):
 
             self.is_gray_scale = False
 
-            self.second_img = self.img.copy()
+            self.second_img = deepcopy(self.img)
             mod_im = Image.fromarray(self.second_img)
             imgtk = ImageTk.PhotoImage(image=mod_im)
             self.mod_label = Label(self.mod_window, image=imgtk)
@@ -211,8 +243,8 @@ class App(Frame):
             self.bright_entry.config(state=NORMAL)
             self.contrast_entry.config(state=NORMAL)
             self.negative_button.config(state=NORMAL)
-
-
+            self.hist_equalization_button.config(state=NORMAL)
+            self.load_hist_match_img_button.config(state=NORMAL)
 
     def h_flip(self):
         """Flips an image horizontally"""
@@ -240,7 +272,14 @@ class App(Frame):
         else:
             showwarning("Warning", "No copy to modify.")
 
-    def grayscale(self,mod_inplace=True):
+    def grayscale_mod_image(self):
+        self.second_img = self.grayscale(self.second_img)
+        self.is_gray_scale = True
+        self.show_modified_image()
+
+    def grayscale(self,img):
+
+
         if self.mod_window is not None:
             height, width = self.second_img.shape[0], self.second_img.shape[1]
             #
@@ -254,19 +293,14 @@ class App(Frame):
             #         new_val = np.round(new_val)
             #         self.second_img[i][j] = new_val
             rgb2grayscale = np.array([0.299, 0.587, 0.114])
-            buffer = deepcopy(self.second_img)
+            buffer = deepcopy(img)
             buffer[..., 0] = np.round(
                 np.sum(buffer * rgb2grayscale, axis=-1)).astype('uint8')
             buffer[..., 1] = np.round(
                 np.sum(buffer * rgb2grayscale, axis=-1)).astype('uint8')
             buffer[..., 2] = np.round(
                 np.sum(buffer * rgb2grayscale, axis=-1)).astype('uint8')
-            if mod_inplace:
-                self.is_gray_scale = True
-                self.second_img = buffer.copy()
-                self.show_modified_image()
-            else:
-                return buffer
+            return buffer
         else:
             showwarning("Warning", "No copy to modify.")
 
@@ -307,16 +341,21 @@ class App(Frame):
             elif not self.is_gray_scale:
                 showwarning("Warning", "Apply grayscale before trying this.")
 
-    def draw_histogram(self):
+    def draw_gray_histogram(self):
         if self.mod_window is not None:            
             self.hist_window = Toplevel(root)
             self.hist_window.protocol('WM_DELETE_WINDOW', self.remove_hist_window)
             self.hist_window.title("Histogram")
-            height,width=300,512
             self.canvas = Canvas(self.hist_window, height=256, width=256, bg="azure3")
             self.canvas.pack(expand=YES, fill=BOTH)
+            height, width = 256, 256
 
-            histogram = self.calculate_grayscale_histogram()
+            if not self.is_gray_scale:
+                self.second_img = self.grayscale(self.second_img)
+                self.is_gray_scale = True
+                self.show_modified_image()
+
+            histogram = self.calculate_histogram(self.second_img[:,:,0])
             number_of_stripes = 2 * 256 + 1
             bar_width = width/number_of_stripes
             unit_height = 256 / max(histogram.values())
@@ -325,53 +364,143 @@ class App(Frame):
                 self.canvas.create_rectangle(
                     (2 * i + 1) * bar_width, height - unit_height,
                     (2 * i + 2) * bar_width, height - ((histogram[i] + 1) * unit_height),
-                    fill = 'black'
+                    fill = 'sea green', outline = 'sea green'
                 )                
 
         else:
             if self.mod_window is None:
                 showwarning("Warning", "No copy to modify.")
 
-    def calculate_grayscale_histogram(self):
-        height, width = self.second_img.shape[0], self.second_img.shape[1]
+    def draw_before_after_histogram(self, hist, hist2):
+        self.hist_window = Toplevel(root)
+        self.hist_window.protocol('WM_DELETE_WINDOW', self.remove_hist_window)
+        self.hist_window.title("Before")
+        self.canvas = Canvas(self.hist_window, height=256, width=256, bg="azure3")
+        self.canvas.pack(expand=YES, fill=BOTH)
+
+        height, width = 256, 256
+        number_of_stripes = 2 * 256 + 1
+        bar_width = 256/number_of_stripes
+        unit_height_before = 256 / max(hist.values())
+
+        for i in range(256):
+            self.canvas.create_rectangle(
+                    (2 * i + 1) * bar_width, height - unit_height_before,
+                    (2 * i + 2) * bar_width, height - ((hist[i] + 1) * unit_height_before),
+                    fill = 'sea green', outline = 'sea green'
+                )
+
+        self.hist_window2 = Toplevel(root)
+        self.hist_window2.protocol('WM_DELETE_WINDOW', self.remove_hist_window2)
+        self.hist_window2.title("After")
+        self.canvas = Canvas(self.hist_window2, height=256, width=256, bg="light steel blue")
+        self.canvas.pack(expand=YES, fill=BOTH)
+
+        unit_height_after = 256 / max(hist2.values())
+
+        for i in range(256):
+            self.canvas.create_rectangle(
+                (2 * i + 1) * bar_width, height - unit_height_after,
+                (2 * i + 2) * bar_width, height - ((hist2[i] + 1) * unit_height_after),
+                fill = 'royal blue', outline = 'royal blue'
+            )
+
+    def calculate_histogram(self,img):
+        height, width = img.shape[0], img.shape[1]
         histogram = defaultdict(int)
-        buffer = self.grayscale(mod_inplace=False)
 
         for i in range(height):
             for j in range(width):
-                histogram[buffer[i][j][0]] += 1
+                histogram[img[i][j]] += 1
         
         return histogram
 
+    def calculate_cumulative_histogram(self,img,histogram=None):
+        if not histogram:
+            histogram = self.calculate_histogram(img)
+        else:
+            height, width = img.shape[0], img.shape[1]
+            alpha = 255 / (height * width)
+            cum_histogram = defaultdict(int)
+            cum_histogram[0] = alpha * histogram[0]
+            for i in range(1,256):
+                cum_histogram[i] = cum_histogram[i-1] + (alpha * histogram[i])
+        
+        return cum_histogram
+
     def histogram_equalization(self):
-        if self.mod_window is not None:
-            # self.hist_window2 = Toplevel(root)
-            # self.hist_window2.protocol('WM_DELETE_WINDOW', self.remove_hist_window2)
-            # self.hist_window2.title("Histogram")
+        if self.mod_window is not None:            
             self.third_window = Toplevel(root)
             self.third_window.protocol('WM_DELETE_WINDOW', self.remove_third_window)
             self.third_window.title("Image after equalization")
 
-            if self.is_gray_scale:
-                histogram = self.calculate_grayscale_histogram()
-                alpha = 255 / (self.second_img.shape[0] * self.second_img.shape[1])
-                cum_histogram = {}
-                cum_histogram[0] = alpha * histogram[0]
-                for i in range(1,256):
-                    cum_histogram[i] = cum_histogram[i-1] + (alpha * histogram[i])
-                
-                self.third_img = self.second_img.copy()
-                img_height, img_width = self.third_img.shape[0], self.third_img.shape[1]
+            if not self.is_gray_scale:
+                buffer = self.grayscale(self.second_img)
+            else:
+                buffer = self.second_img.copy()
 
+            before_histogram = self.calculate_histogram(buffer[:,:,0])
+            cum_histogram = self.calculate_cumulative_histogram(buffer, before_histogram)
+            
+            self.third_img = self.second_img.copy()
+            img_height, img_width = self.third_img.shape[0], self.third_img.shape[1]
+
+            if self.is_gray_scale:
                 for i in range(img_height):
                     for j in range(img_width):
                         self.third_img[i][j] = cum_histogram[self.second_img[i][j][0]]
+            else:
+                for i in range(img_height):
+                    for j in range(img_width):
+                        for c in range(3):
+                            self.third_img[i][j][c] = cum_histogram[self.second_img[i][j][c]]
+            
+            buffer = self.grayscale(self.third_img)
+            after_histogram = self.calculate_histogram(buffer[:,:,0])            
+            self.draw_before_after_histogram(before_histogram, after_histogram)
 
-                im = Image.fromarray(self.third_img)
-                imgtk = ImageTk.PhotoImage(image=im)
-                self.third_label = Label(self.third_window, image=imgtk)
-                self.third_label.image = imgtk
-                self.third_label.pack()
+            im = Image.fromarray(self.third_img)
+            imgtk = ImageTk.PhotoImage(image=im)
+            self.third_label = Label(self.third_window, image=imgtk)
+            self.third_label.image = imgtk
+            self.third_label.pack()
+
+        else:
+            showwarning("Warning", "No copy to modify.")
+
+    def find_closest(self, shade, cum_tgt):
+        diffs = [ shade - x for x in cum_tgt.values() ]
+        min_diff_idx = diffs.index(min(diffs))
+        return cum_tgt[min_diff_idx]
+        
+
+    def match_histograms(self):
+        if self.third_window and self.mod_window and self.is_gray_scale:
+            src_hist = self.calculate_histogram(self.second_img[:,:,0])
+            tgt_hist = self.calculate_histogram(self.third_img[:,:,0])
+            src_cumulative_hist = self.calculate_cumulative_histogram(self.second_img[:,:,0], src_hist)
+            tgt_cumulative_hist = self.calculate_cumulative_histogram(self.third_img[:,:,0], tgt_hist)
+
+            hist_match = {}
+
+            for shade in range(256):
+                hist_match[shade] = self.find_closest(shade, tgt_cumulative_hist)
+            
+            height, width = self.second_img.shape[0], self.second_img.shape[1]
+
+            for i in range(height):
+                for j in range(width):
+                    self.second_img[i][j] = hist_match[self.second_img[i][j][0]]
+            
+            self.show_modified_image
+
+        elif self.third_window is None:
+            showwarning("Warning", "Load a target image")
+        elif self.mod_window is None:
+            showwarning("Warning", "Need a copy of the original image to perform this operation.")
+        elif not self.is_gray_scale:
+            showwarning("Warning", "Apply grayscale before trying this.")
+
 
     def brightness_adj(self):
         if self.mod_window is not None:
