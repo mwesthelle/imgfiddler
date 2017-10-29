@@ -3,6 +3,7 @@ from tkinter.filedialog import askopenfilename, asksaveasfilename
 from tkinter.messagebox import showerror, showwarning
 from collections import defaultdict
 from PIL import Image, ImageTk
+from copy import deepcopy
 
 import cv2
 import numpy as np
@@ -17,13 +18,16 @@ class App(Frame):
         self.parent = parent
         self.img = None
         self.second_img = None
+        self.third_img = None
         self.window = None
         self.mod_window = None
+        self.third_window = None
         self.hist_window = None
+        self.hist_window2 = None
         self.canvas = None
         self.label = None
         self.mod_label = None
-        self.hist_label = None
+        self.third_label = None
 
         self.height = 0
         self.width = 0
@@ -92,6 +96,9 @@ class App(Frame):
         self.negative_button = Button(self, text="Negative", state=DISABLED, command=self.negative)
         self.negative_button.grid(row=17, padx=3, pady=4, sticky = W + E)
 
+        self.negative_button = Button(self, text="Histogram equalization", state=DISABLED, command=self.histogram_equalization)
+        self.negative_button.grid(row=18, padx=3, pady=4, sticky = W + E)
+
     def validate_quantize(self, action, index, value_if_allowed, prior_value,
                  text, validation_type, trigger_type, widget_name):
         """This function enables the quantize button when the something is put in the text field"""
@@ -143,7 +150,9 @@ class App(Frame):
 
         self.remove_window()
         self.remove_second_window()
+        self.remove_third_window
         self.remove_hist_window()
+        self.remove_hist_window2
 
         self.img = cv2.merge((red, green, blue))
 
@@ -231,11 +240,11 @@ class App(Frame):
         else:
             showwarning("Warning", "No copy to modify.")
 
-    def grayscale(self):
+    def grayscale(self,mod_inplace=True):
         if self.mod_window is not None:
             height, width = self.second_img.shape[0], self.second_img.shape[1]
             #
-            #   the code below is too slow; TODO: explore using cython to speed 'for' loops
+            #   the code below is too slow; TODO: explore using cython to speed up 'for' loops
             #
             # for i in range(height):
             #     for j in range(width):
@@ -245,14 +254,19 @@ class App(Frame):
             #         new_val = np.round(new_val)
             #         self.second_img[i][j] = new_val
             rgb2grayscale = np.array([0.299, 0.587, 0.114])
-            self.second_img[..., 0] = np.round(
-                np.sum(self.second_img * rgb2grayscale, axis=-1)).astype('uint8')
-            self.second_img[..., 1] = np.round(
-                np.sum(self.second_img * rgb2grayscale, axis=-1)).astype('uint8')
-            self.second_img[..., 2] = np.round(
-                np.sum(self.second_img * rgb2grayscale, axis=-1)).astype('uint8')
-            self.is_gray_scale = True
-            self.show_modified_image()
+            buffer = deepcopy(self.second_img)
+            buffer[..., 0] = np.round(
+                np.sum(buffer * rgb2grayscale, axis=-1)).astype('uint8')
+            buffer[..., 1] = np.round(
+                np.sum(buffer * rgb2grayscale, axis=-1)).astype('uint8')
+            buffer[..., 2] = np.round(
+                np.sum(buffer * rgb2grayscale, axis=-1)).astype('uint8')
+            if mod_inplace:
+                self.is_gray_scale = True
+                self.second_img = buffer.copy()
+                self.show_modified_image()
+            else:
+                return buffer
         else:
             showwarning("Warning", "No copy to modify.")
 
@@ -294,7 +308,7 @@ class App(Frame):
                 showwarning("Warning", "Apply grayscale before trying this.")
 
     def draw_histogram(self):
-        if self.mod_window is not None and self.is_gray_scale:
+        if self.mod_window is not None:            
             self.hist_window = Toplevel(root)
             self.hist_window.protocol('WM_DELETE_WINDOW', self.remove_hist_window)
             self.hist_window.title("Histogram")
@@ -302,7 +316,7 @@ class App(Frame):
             self.canvas = Canvas(self.hist_window, height=256, width=256, bg="azure3")
             self.canvas.pack(expand=YES, fill=BOTH)
 
-            histogram = self.calculate_histogram()
+            histogram = self.calculate_grayscale_histogram()
             number_of_stripes = 2 * 256 + 1
             bar_width = width/number_of_stripes
             unit_height = 256 / max(histogram.values())
@@ -312,25 +326,52 @@ class App(Frame):
                     (2 * i + 1) * bar_width, height - unit_height,
                     (2 * i + 2) * bar_width, height - ((histogram[i] + 1) * unit_height),
                     fill = 'black'
-                )
-                
+                )                
 
         else:
             if self.mod_window is None:
                 showwarning("Warning", "No copy to modify.")
-            elif not self.is_gray_scale:
-                showwarning("Warning", "Apply grayscale before trying this.")
 
-    def calculate_histogram(self):
-        height = self.second_img.shape[0]
-        width = self.second_img.shape[1]
-        hist_table = defaultdict(int)
+    def calculate_grayscale_histogram(self):
+        height, width = self.second_img.shape[0], self.second_img.shape[1]
+        histogram = defaultdict(int)
+        buffer = self.grayscale(mod_inplace=False)
 
         for i in range(height):
             for j in range(width):
-                hist_table[self.second_img[i][j][0]] += 1
+                histogram[buffer[i][j][0]] += 1
         
-        return hist_table 
+        return histogram
+
+    def histogram_equalization(self):
+        if self.mod_window is not None:
+            # self.hist_window2 = Toplevel(root)
+            # self.hist_window2.protocol('WM_DELETE_WINDOW', self.remove_hist_window2)
+            # self.hist_window2.title("Histogram")
+            self.third_window = Toplevel(root)
+            self.third_window.protocol('WM_DELETE_WINDOW', self.remove_third_window)
+            self.third_window.title("Image after equalization")
+
+            if self.is_gray_scale:
+                histogram = self.calculate_grayscale_histogram()
+                alpha = 255 / (self.second_img.shape[0] * self.second_img.shape[1])
+                cum_histogram = {}
+                cum_histogram[0] = alpha * histogram[0]
+                for i in range(1,256):
+                    cum_histogram[i] = cum_histogram[i-1] + (alpha * histogram[i])
+                
+                self.third_img = self.second_img.copy()
+                img_height, img_width = self.third_img.shape[0], self.third_img.shape[1]
+
+                for i in range(img_height):
+                    for j in range(img_width):
+                        self.third_img[i][j] = cum_histogram[self.second_img[i][j][0]]
+
+                im = Image.fromarray(self.third_img)
+                imgtk = ImageTk.PhotoImage(image=im)
+                self.third_label = Label(self.third_window, image=imgtk)
+                self.third_label.image = imgtk
+                self.third_label.pack()
 
     def brightness_adj(self):
         if self.mod_window is not None:
@@ -431,6 +472,12 @@ class App(Frame):
         if self.mod_window is not None:
             self.mod_window.destroy()
             self.mod_window = None
+    
+    def remove_third_window(self):
+        """Destroys second image window and sets it to none"""
+        if self.third_window is not None:
+            self.third_window.destroy()
+            self.third_window = None
 
     def remove_window(self):
         """Destroy first image window and sets it to none"""
@@ -443,6 +490,12 @@ class App(Frame):
         if self.hist_window is not None:
             self.hist_window.destroy()
             self.hist_window = None
+    
+    def remove_hist_window2(self):
+        """Destroy first image window and sets it to none"""
+        if self.hist_window2 is not None:
+            self.hist_window2.destroy()
+            self.hist_window2 = None
 
 if __name__ == "__main__":
     root = Tk()
