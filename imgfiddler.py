@@ -58,12 +58,16 @@ class App(Frame):
             self, text="Grayscale", state=DISABLED, command=self.grayscale)
         self.grayscale_button.grid(row=6, padx=3, pady=4, sticky = W + E)
 
-        vcmd = (self.register(self.validate), '%d',
+        quantize_vcmd = (self.register(self.validate_quantize), '%d',
+        '%i', '%P', '%s', '%S', '%v', '%V', '%W')
+        bright_vcmd = (self.register(self.validate_bright), '%d',
+        '%i', '%P', '%s', '%S', '%v', '%V', '%W')
+        contrast_vcmd = (self.register(self.validate_contrast), '%d',
         '%i', '%P', '%s', '%S', '%v', '%V', '%W')
 
         quantize_lab = Label(self, text="Number of shades for quantization")
         quantize_lab.grid(row=7, sticky=W)
-        self.quantize_entry = Entry(self, state=DISABLED, validate="key", validatecommand=vcmd)
+        self.quantize_entry = Entry(self, state=DISABLED, validate="key", validatecommand=quantize_vcmd)
         self.quantize_entry.grid(row=8)
         self.quantize_button = Button(self, text="Quantize", state=DISABLED, command=self.quantize)
         self.quantize_button.grid(row=9, padx=3, pady=4, sticky= W + E)
@@ -73,23 +77,49 @@ class App(Frame):
 
         bright_lab = Label(self, text="Brightness adjustment")
         bright_lab.grid(row=11)
-        self.bright_entry = Entry(self, state=DISABLED, validate="key", validatecommand=vcmd)
+        self.bright_entry = Entry(self, state=DISABLED, validate="key", validatecommand=bright_vcmd)
         self.bright_entry.grid(row=12)
         self.bright_button = Button(self, text="Apply brightness adjustment", state=DISABLED, command=self.brightness_adj)
+        self.bright_button.grid(row=13, padx=3, pady=4, sticky = W + E)
         
         contrast_lab = Label(self, text="Contrast adjustment")
-        contrast_lab.grid(row=13)
-        self.contrast_entry = Entry(self, state=DISABLED, validate="key", validatecommand=vcmd)
-        self.contrast_entry.grid(row=14)
-        self.contrast_button = Button(self, text="Apply contrast adjustment", state=DISABLED, command=self.brightness_adj)
+        contrast_lab.grid(row=14)
+        self.contrast_entry = Entry(self, state=DISABLED, validate="key", validatecommand=contrast_vcmd)
+        self.contrast_entry.grid(row=15)
+        self.contrast_button = Button(self, text="Apply contrast adjustment", state=DISABLED, command=self.contrast_adj)
+        self.contrast_button.grid(row=16, padx=3, pady=4, sticky = W + E)
 
+        self.negative_button = Button(self, text="Negative", state=DISABLED, command=self.negative)
+        self.negative_button.grid(row=17, padx=3, pady=4, sticky = W + E)
 
-    def validate(self, action, index, value_if_allowed, prior_value,
+    def validate_quantize(self, action, index, value_if_allowed, prior_value,
                  text, validation_type, trigger_type, widget_name):
         """This function enables the quantize button when the something is put in the text field"""
         self.quantize_button.config(
             state=(NORMAL if value_if_allowed and text else DISABLED))
         if str.isdigit(value_if_allowed) or value_if_allowed == "":
+            return True
+        else:
+            self.bell()
+            return False
+    
+    def validate_bright(self, action, index, value_if_allowed, prior_value,
+                 text, validation_type, trigger_type, widget_name):
+        """This function enables the quantize button when the something is put in the text field"""
+        self.bright_button.config(
+            state=(NORMAL if value_if_allowed and text else DISABLED))
+        if text in '0123456789-' or value_if_allowed == "":
+            return True
+        else:
+            self.bell()
+            return False
+
+    def validate_contrast(self, action, index, value_if_allowed, prior_value,
+                 text, validation_type, trigger_type, widget_name):
+        """This function enables the quantize button when the something is put in the text field"""
+        self.contrast_button.config(
+            state=(NORMAL if value_if_allowed and text else DISABLED))
+        if text in '0123456789.' or value_if_allowed == "":
             return True
         else:
             self.bell()
@@ -167,8 +197,12 @@ class App(Frame):
             self.h_flip_button.config(state=NORMAL)
             self.grayscale_button.config(state=NORMAL)
             self.save_button.config(state=NORMAL)
-            self.ent1.config(state=NORMAL)
+            self.quantize_entry.config(state=NORMAL)
             self.hist_button.config(state=NORMAL)
+            self.bright_entry.config(state=NORMAL)
+            self.contrast_entry.config(state=NORMAL)
+            self.negative_button.config(state=NORMAL)
+
 
 
     def h_flip(self):
@@ -306,18 +340,88 @@ class App(Frame):
             except ValueError:
                 showerror(
                     "Error", "Invalid input. Must type a number between -255 and 255.")
-
             if adjust_value not in range (-255,256):
                 showerror(
                     "Error", "Invalid input. Must type a number between -255 and 255.")
             else:
                 height, width = self.second_img.shape[0], self.second_img.shape[1]
-                for i in range(height):
-                    for j in range(width):
-                        sel
+                buffer = self.second_img.copy()
+                #
+                # This is PAINFULLY slow, but it works
+                #
+                # for c in range(3):
+                #     for i in range(height):
+                #         for j in range(width):
+                #             if buffer[i][j][c] + adjust_value > 255:
+                #                 buffer[i][j][c] = 255
+                #             elif buffer[i][j][c] + adjust_value < 0:
+                #                 buffer[i][j][c] = 0
+                #             else:
+                #                 buffer[i][j][c] += adjust_value
+                #
+                #numpy trickery to simulate a ternary operator, MUCH faster than manually operating on individual pixels
+                buffer = np.where((255 - self.second_img) < adjust_value, 255, 
+                                    (np.where((self.second_img + adjust_value) < 0, 0, self.second_img + adjust_value)))
+
+                self.second_img = buffer.copy()
+                self.show_modified_image()
+        else:
+            if self.mod_window is None:
+                showwarning("Warning", "No copy to modify.")
+
+    def contrast_adj(self):
+        if self.mod_window is not None:
+            adjust_value = self.contrast_entry.get()
+            try:
+                adjust_value = float(adjust_value)
+            except ValueError:
+                showerror(
+                    "Error", "Invalid input. Must type a number between 0 and 255.")
+            if int(adjust_value) not in range (0,256):
+                showerror(
+                    "Error", "Invalid input. Must type a number between 0 and 255.")
+            else:
+                height, width = self.second_img.shape[0], self.second_img.shape[1]
+                buffer = self.second_img.copy()
+                #
+                # slower than a turtle.
+                #
+                # for c in range(3):
+                #     for i in range(height):
+                #         for j in range(width):
+                #             if buffer[i][j][c] * adjust_value > 255:
+                #                 buffer[i][j][c] = 255
+                #             elif buffer[i][j][c] * adjust_value < 0:
+                #                 buffer[i][j][c] = 0
+                #             else:
+                #                 buffer[i][j][c] *= adjust_value
+
+                buffer = np.where((self.second_img * adjust_value) > 255, 255, self.second_img * adjust_value)
+            
+                self.second_img = buffer.copy()
+                self.show_modified_image()
+        else:
+            if self.mod_window is None:
+                showwarning("Warning", "No copy to modify.")
+
+    def negative(self):
+        if self.mod_window is not None:
+            height, width = self.second_img.shape[0], self.second_img.shape[1]
+
+            for i in range(height):
+                for j in range(width):
+                    self.second_img[i,j,:] = 255 - self.second_img[i,j,:]
+
+            #self.second_img = 255 - self.second_img
+
+            self.show_modified_image()
+        else:
+            if self.mod_window is None:
+                showwarning("Warning", "No copy to modify.")  
+
 
     def show_modified_image(self):
-        image = Image.fromarray(self.second_img)
+        image = Image.fromarray(self.second_img.astype('uint8'))
         imgtk = ImageTk.PhotoImage(image=image)
         self.mod_label.configure(image=imgtk)
         self.mod_label.image = imgtk
